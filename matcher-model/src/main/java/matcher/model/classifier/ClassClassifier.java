@@ -478,22 +478,25 @@ public class ClassClassifier {
 
 			if (clsA.getMethods().length > 0 && clsB.getMethods().length > 0) {
 				double maxScore = MethodClassifier.getMaxScore(level);
+				// candidates scoring below absThreshold * (1 - relThreshold) can't change checkRank's result, stop scoring them early
+				double maxMismatch = maxScore - ClassifierUtil.getRawScore(absThreshold * (1 - relThreshold), maxScore);
 
 				for (MethodInstance method : clsA.getMethods()) {
 					if (!method.isMatchable()) continue;
 
-					List<RankResult<MethodInstance>> ranking = MethodClassifier.rank(method, clsB.getMethods(), level, env);
+					List<RankResult<MethodInstance>> ranking = MethodClassifier.rank(method, clsB.getMethods(), level, env, maxMismatch);
 					if (ClassifierUtil.checkRank(ranking, absThreshold, relThreshold, maxScore)) match += ClassifierUtil.getScore(ranking.get(0).getScore(), maxScore);
 				}
 			}
 
 			if (clsA.getFields().length > 0 && clsB.getFields().length > 0) {
 				double maxScore = FieldClassifier.getMaxScore(level);
+				double maxMismatch = maxScore - ClassifierUtil.getRawScore(absThreshold * (1 - relThreshold), maxScore);
 
 				for (FieldInstance field : clsA.getFields()) {
 					if (!field.isMatchable()) continue;
 
-					List<RankResult<FieldInstance>> ranking = FieldClassifier.rank(field, clsB.getFields(), level, env);
+					List<RankResult<FieldInstance>> ranking = FieldClassifier.rank(field, clsB.getFields(), level, env, maxMismatch);
 					if (ClassifierUtil.checkRank(ranking, absThreshold, relThreshold, maxScore)) match += ClassifierUtil.getScore(ranking.get(0).getScore(), maxScore);
 				}
 			}
