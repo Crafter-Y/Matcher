@@ -291,9 +291,9 @@ public class ClassifierUtil {
 
 		InsnList ilA = a.getAsmNode().instructions;
 		InsnList ilB = b.getAsmNode().instructions;
-		// referenced classes and members per instruction, resolved on first use instead of for every compared pair
-		Object[] resolvedA = new Object[ilA.size()];
-		Object[] resolvedB = new Object[ilB.size()];
+		// referenced classes and members per instruction, resolved on first use and kept for all comparisons of the method
+		Object[] resolvedA = a.getEnv().getGlobal().getCache().compute(resolvedInsnsTokenA, a, m -> new Object[ilA.size()]);
+		Object[] resolvedB = b.getEnv().getGlobal().getCache().compute(resolvedInsnsTokenB, b, m -> new Object[ilB.size()]);
 
 		// compareLists specialized for instruction arrays: this is the hottest loop in matching, and compareLists' element
 		// retriever and comparator calls can't be inlined
@@ -581,6 +581,8 @@ public class ClassifierUtil {
 		return ret;
 	}
 
+	private static final CacheToken<Object[]> resolvedInsnsTokenA = new CacheToken<>();
+	private static final CacheToken<Object[]> resolvedInsnsTokenB = new CacheToken<>();
 	private static final Object UNKNOWN_OWNER = new Object();
 	private static final Object UNRESOLVED = new Object();
 
