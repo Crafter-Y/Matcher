@@ -291,16 +291,19 @@ public class ClassifierUtil {
 
 		InsnList ilA = a.getAsmNode().instructions;
 		InsnList ilB = b.getAsmNode().instructions;
+		// referenced classes and members per instruction, resolved on first use instead of for every compared pair
+		Object[] resolvedA = new Object[ilA.size()];
+		Object[] resolvedB = new Object[ilB.size()];
 
-		return compareLists(ilA, ilB, InsnList::get, InsnList::size, (inA, inB) -> compareInsns(inA, inB, ilA, ilB, (list, item) -> list.indexOf(item), a, b, a.getEnv().getGlobal()));
+		return compareLists(ilA, ilB, InsnList::get, InsnList::size, (inA, inB) -> compareInsns(inA, inB, ilA, ilB, (list, item) -> list.indexOf(item), a, b, a.getEnv().getGlobal(), resolvedA, resolvedB));
 	}
 
 	public static double compareInsns(List<AbstractInsnNode> listA, List<AbstractInsnNode> listB, ClassEnvironment env) {
-		return compareLists(listA, listB, List::get, List::size, (inA, inB) -> compareInsns(inA, inB, listA, listB, (list, item) -> list.indexOf(item), null, null, env));
+		return compareLists(listA, listB, List::get, List::size, (inA, inB) -> compareInsns(inA, inB, listA, listB, (list, item) -> list.indexOf(item), null, null, env, null, null));
 	}
 
 	private static <T> int compareInsns(AbstractInsnNode insnA, AbstractInsnNode insnB, T listA, T listB, ToIntBiFunction<T, AbstractInsnNode> posProvider,
-			MethodInstance mthA, MethodInstance mthB, ClassEnvironment env) {
+			MethodInstance mthA, MethodInstance mthB, ClassEnvironment env, Object[] resolvedA, Object[] resolvedB) {
 		if (insnA.getOpcode() != insnB.getOpcode()) return COMPARED_DISTINCT;
 
 		switch (insnA.getType()) {
@@ -330,34 +333,28 @@ public class ClassifierUtil {
 			break;
 		}
 		case AbstractInsnNode.TYPE_INSN: {
-			TypeInsnNode a = (TypeInsnNode) insnA;
-			TypeInsnNode b = (TypeInsnNode) insnB;
-			ClassInstance clsA = env.getClsByNameA(a.desc);
-			ClassInstance clsB = env.getClsByNameB(b.desc);
+			ClassInstance clsA = (ClassInstance) resolve(insnA, true, listA, posProvider, env, resolvedA);
+			ClassInstance clsB = (ClassInstance) resolve(insnB, false, listB, posProvider, env, resolvedB);
 
 			return checkPotentialEqualityNullable(clsA, clsB) ? COMPARED_SIMILAR : COMPARED_DISTINCT;
 		}
 		case AbstractInsnNode.FIELD_INSN: {
-			FieldInsnNode a = (FieldInsnNode) insnA;
-			FieldInsnNode b = (FieldInsnNode) insnB;
-			ClassInstance clsA = env.getClsByNameA(a.owner);
-			ClassInstance clsB = env.getClsByNameB(b.owner);
+			Object fieldA = resolve(insnA, true, listA, posProvider, env, resolvedA);
+			Object fieldB = resolve(insnB, false, listB, posProvider, env, resolvedB);
 
-			if (clsA == null && clsB == null) return COMPARED_SIMILAR;
-			if (clsA == null || clsB == null) return COMPARED_DISTINCT;
+			if (fieldA == UNKNOWN_OWNER && fieldB == UNKNOWN_OWNER) return COMPARED_SIMILAR;
+			if (fieldA == UNKNOWN_OWNER || fieldB == UNKNOWN_OWNER) return COMPARED_DISTINCT;
 
-			FieldInstance fieldA = clsA.resolveField(a.name, a.desc);
-			FieldInstance fieldB = clsB.resolveField(b.name, b.desc);
-
-			return checkPotentialEqualityNullable(fieldA, fieldB) ? COMPARED_SIMILAR : COMPARED_DISTINCT;
+			return checkPotentialEqualityNullable((FieldInstance) fieldA, (FieldInstance) fieldB) ? COMPARED_SIMILAR : COMPARED_DISTINCT;
 		}
 		case AbstractInsnNode.METHOD_INSN: {
-			MethodInsnNode a = (MethodInsnNode) insnA;
-			MethodInsnNode b = (MethodInsnNode) insnB;
+			Object methodA = resolve(insnA, true, listA, posProvider, env, resolvedA);
+			Object methodB = resolve(insnB, false, listB, posProvider, env, resolvedB);
 
-			return compareMethods(a.owner, a.name, a.desc, Util.isCallToInterface(a),
-					b.owner, b.name, b.desc, Util.isCallToInterface(b),
-					env) ? COMPARED_SIMILAR : COMPARED_DISTINCT;
+			if (methodA == UNKNOWN_OWNER && methodB == UNKNOWN_OWNER) return COMPARED_SIMILAR;
+			if (methodA == UNKNOWN_OWNER || methodB == UNKNOWN_OWNER) return COMPARED_DISTINCT;
+
+			return checkPotentialEqualityNullable((MethodInstance) methodA, (MethodInstance) methodB) ? COMPARED_SIMILAR : COMPARED_DISTINCT;
 		}
 		case AbstractInsnNode.INVOKE_DYNAMIC_INSN: {
 			InvokeDynamicInsnNode a = (InvokeDynamicInsnNode) insnA;
@@ -467,8 +464,8 @@ public class ClassifierUtil {
 
 			if (a.dims != b.dims) return COMPARED_DISTINCT;
 
-			ClassInstance clsA = env.getClsByNameA(a.desc);
-			ClassInstance clsB = env.getClsByNameB(b.desc);
+			ClassInstance clsA = (ClassInstance) resolve(insnA, true, listA, posProvider, env, resolvedA);
+			ClassInstance clsB = (ClassInstance) resolve(insnB, false, listB, posProvider, env, resolvedB);
 
 			return checkPotentialEqualityNullable(clsA, clsB) ? COMPARED_SIMILAR : COMPARED_DISTINCT;
 		}
@@ -484,6 +481,58 @@ public class ClassifierUtil {
 
 		return COMPARED_SIMILAR;
 	}
+
+	/**
+	 * Resolves the class, field or method a type, multianewarray, field or method instruction references.
+	 *
+	 * <p>Returns {@link #UNKNOWN_OWNER} for a field or method whose owner class is unknown. The result is stored in
+	 * {@code resolved} at the instruction's position if {@code resolved} isn't null.
+	 */
+	private static <T> Object resolve(AbstractInsnNode insn, boolean isA, T list, ToIntBiFunction<T, AbstractInsnNode> posProvider, ClassEnvironment env, Object[] resolved) {
+		int pos = -1;
+
+		if (resolved != null) {
+			pos = posProvider.applyAsInt(list, insn);
+			Object ret = resolved[pos];
+			if (ret != null) return ret == UNRESOLVED ? null : ret;
+		}
+
+		Object ret;
+
+		switch (insn.getType()) {
+		case AbstractInsnNode.TYPE_INSN: {
+			String desc = ((TypeInsnNode) insn).desc;
+			ret = isA ? env.getClsByNameA(desc) : env.getClsByNameB(desc);
+			break;
+		}
+		case AbstractInsnNode.MULTIANEWARRAY_INSN: {
+			String desc = ((MultiANewArrayInsnNode) insn).desc;
+			ret = isA ? env.getClsByNameA(desc) : env.getClsByNameB(desc);
+			break;
+		}
+		case AbstractInsnNode.FIELD_INSN: {
+			FieldInsnNode in = (FieldInsnNode) insn;
+			ClassInstance owner = isA ? env.getClsByNameA(in.owner) : env.getClsByNameB(in.owner);
+			ret = owner == null ? UNKNOWN_OWNER : owner.resolveField(in.name, in.desc);
+			break;
+		}
+		case AbstractInsnNode.METHOD_INSN: {
+			MethodInsnNode in = (MethodInsnNode) insn;
+			ClassInstance owner = isA ? env.getClsByNameA(in.owner) : env.getClsByNameB(in.owner);
+			ret = owner == null ? UNKNOWN_OWNER : owner.resolveMethod(in.name, in.desc, Util.isCallToInterface(in));
+			break;
+		}
+		default:
+			throw new IllegalArgumentException("unexpected instruction type: " + insn.getType());
+		}
+
+		if (resolved != null) resolved[pos] = ret == null ? UNRESOLVED : ret;
+
+		return ret;
+	}
+
+	private static final Object UNKNOWN_OWNER = new Object();
+	private static final Object UNRESOLVED = new Object();
 
 	private static boolean compareMethods(String ownerA, String nameA, String descA, boolean toIfA, String ownerB, String nameB, String descB, boolean toIfB, ClassEnvironment env) {
 		ClassInstance clsA = env.getClsByNameA(ownerA);
@@ -567,7 +616,7 @@ public class ClassifierUtil {
 	}
 
 	public static int[] mapInsns(InsnList listA, InsnList listB, MethodInstance mthA, MethodInstance mthB, ClassEnvironment env) {
-		return mapLists(listA, listB, InsnList::get, InsnList::size, (inA, inB) -> compareInsns(inA, inB, listA, listB, (list, item) -> list.indexOf(item), mthA, mthB, env));
+		return mapLists(listA, listB, InsnList::get, InsnList::size, (inA, inB) -> compareInsns(inA, inB, listA, listB, (list, item) -> list.indexOf(item), mthA, mthB, env, null, null));
 	}
 
 	private static <T, U> int[] mapLists(T listA, T listB, ListElementRetriever<T, U> elementRetriever, ListSizeRetriever<T> sizeRetriever, ElementComparator<U> elementComparator) {
