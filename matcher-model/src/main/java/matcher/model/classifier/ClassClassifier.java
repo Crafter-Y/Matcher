@@ -1,7 +1,6 @@
 package matcher.model.classifier;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashSet;
@@ -208,20 +207,24 @@ public class ClassClassifier {
 			if (clsA.getMethods().length == 0 && clsB.getMethods().length == 0) return 1;
 			if (clsA.getMethods().length == 0 || clsB.getMethods().length == 0) return 0;
 
-			Set<MethodInstance> methodsB = Util.newIdentityHashSet(Arrays.asList(clsB.getMethods()));
+			MethodInstance[] methodsB = clsB.getMethods();
+			boolean[] usedB = new boolean[methodsB.length];
 			double totalScore = 0;
-			MethodInstance bestMatch = null;
+			int bestMatch = -1;
 			double bestScore = 0;
 
 			for (MethodInstance methodA : clsA.getMethods()) {
 				{
-					mBLoop: for (MethodInstance methodB : methodsB) {
-						if (!ClassifierUtil.checkPotentialEquality(methodA, methodB)) continue;
-						if (!ClassifierUtil.checkPotentialEquality(methodA.getRetType(), methodB.getRetType())) continue;
+					mBLoop: for (int j = 0; j < methodsB.length; j++) {
+						if (usedB[j]) continue;
 
+						MethodInstance methodB = methodsB[j];
 						MethodVarInstance[] argsA = methodA.getArgs();
 						MethodVarInstance[] argsB = methodB.getArgs();
 						if (argsA.length != argsB.length) continue;
+
+						if (!ClassifierUtil.checkPotentialEquality(methodA, methodB)) continue;
+						if (!ClassifierUtil.checkPotentialEquality(methodA.getRetType(), methodB.getRetType())) continue;
 
 						for (int i = 0; i < argsA.length; i++) {
 							ClassInstance argA = argsA[i].getType();
@@ -244,14 +247,14 @@ public class ClassClassifier {
 
 						if (score > bestScore) {
 							bestScore = score;
-							bestMatch = methodB;
+							bestMatch = j;
 						}
 					}
 				}
 
-				if (bestMatch != null) {
+				if (bestMatch >= 0) {
 					totalScore += bestScore;
-					methodsB.remove(bestMatch);
+					usedB[bestMatch] = true;
 				}
 			}
 
