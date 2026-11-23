@@ -295,7 +295,57 @@ public class ClassifierUtil {
 		Object[] resolvedA = new Object[ilA.size()];
 		Object[] resolvedB = new Object[ilB.size()];
 
-		return compareLists(ilA, ilB, InsnList::get, InsnList::size, (inA, inB) -> compareInsns(inA, inB, ilA, ilB, (list, item) -> list.indexOf(item), a, b, a.getEnv().getGlobal(), resolvedA, resolvedB));
+		// compareLists specialized for instruction arrays: this is the hottest loop in matching, and compareLists' element
+		// retriever and comparator calls can't be inlined
+		AbstractInsnNode[] insnsA = ilA.toArray();
+		AbstractInsnNode[] insnsB = ilB.toArray();
+		ClassEnvironment env = a.getEnv().getGlobal();
+		ToIntBiFunction<InsnList, AbstractInsnNode> posProvider = (list, item) -> list.indexOf(item);
+		final int sizeA = insnsA.length;
+		final int sizeB = insnsB.length;
+
+		if (sizeA == 0 && sizeB == 0) return 1;
+		if (sizeA == 0 || sizeB == 0) return 0;
+
+		if (sizeA == sizeB) {
+			boolean match = true;
+
+			for (int i = 0; i < sizeA; i++) {
+				if (compareInsns(insnsA[i], insnsB[i], ilA, ilB, posProvider, a, b, env, resolvedA, resolvedB) != COMPARED_SIMILAR) {
+					match = false;
+					break;
+				}
+			}
+
+			if (match) return 1;
+		}
+
+		int[] v0 = new int[sizeB + 1];
+		int[] v1 = new int[sizeB + 1];
+
+		for (int i = 1; i < v0.length; i++) {
+			v0[i] = i * COMPARED_DISTINCT;
+		}
+
+		for (int i = 0; i < sizeA; i++) {
+			v1[0] = (i + 1) * COMPARED_DISTINCT;
+			AbstractInsnNode insnA = insnsA[i];
+
+			for (int j = 0; j < sizeB; j++) {
+				int cost = compareInsns(insnA, insnsB[j], ilA, ilB, posProvider, a, b, env, resolvedA, resolvedB);
+				v1[j + 1] = Math.min(Math.min(v1[j] + COMPARED_DISTINCT, v0[j + 1] + COMPARED_DISTINCT), v0[j] + cost);
+			}
+
+			for (int j = 0; j < v0.length; j++) {
+				v0[j] = v1[j];
+			}
+		}
+
+		int distance = v1[sizeB];
+		int upperBound = Math.max(sizeA, sizeB) * COMPARED_DISTINCT;
+		assert distance >= 0 && distance <= upperBound;
+
+		return 1 - (double) distance / upperBound;
 	}
 
 	public static double compareInsns(List<AbstractInsnNode> listA, List<AbstractInsnNode> listB, ClassEnvironment env) {
