@@ -1,0 +1,32 @@
+name: Publish to GitHub Packages
+on:
+  workflow_dispatch: # Manual trigger
+    inputs:
+      version:
+        description: "Version to publish, e.g. 0.1.0-yt.1"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Build and publish
+        run: ./gradlew build publishAllPublicationsToGitHubPackagesRepository -Pversion=${{ inputs.version }} --stacktrace --warning-mode=fail
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

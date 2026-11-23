@@ -5,6 +5,7 @@ plugins {
 publishing {
 	publications {
 		"$project.name"(MavenPublication) {
+			groupId = 'com.github.Crafter-Y'
 			from components.java
 		}
 	}
@@ -19,6 +20,17 @@ publishing {
 				credentials {
 					username = ENV.MAVEN_USERNAME
 					password = ENV.MAVEN_PASSWORD
+				}
+			}
+		}
+
+		if (ENV.GITHUB_TOKEN) {
+			repositories.maven {
+				name = "GitHubPackages"
+				url = "https://maven.pkg.github.com/${ENV.GITHUB_REPOSITORY ?: 'Crafter-Y/Matcher'}"
+				credentials {
+					username = ENV.GITHUB_ACTOR
+					password = ENV.GITHUB_TOKEN
 				}
 			}
 		}
