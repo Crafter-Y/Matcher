@@ -39,6 +39,10 @@ public class Util {
 		return Collections.newSetFromMap(new IdentityHashMap<>()); //new IdentityHashSet<>();
 	}
 
+	public static <T> Set<T> newIdentityHashSet(int expectedMaxSize) {
+		return Collections.newSetFromMap(new IdentityHashMap<>(expectedMaxSize));
+	}
+
 	public static <T> Set<T> newIdentityHashSet(Collection<? extends T> c) {
 		Set<T> ret = Collections.newSetFromMap(new IdentityHashMap<>(c.size()));
 		ret.addAll(c);
