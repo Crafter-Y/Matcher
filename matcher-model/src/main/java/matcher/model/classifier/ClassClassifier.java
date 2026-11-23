@@ -17,6 +17,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import matcher.model.Util;
+import matcher.model.classifier.MatchingCache.CacheToken;
 import matcher.model.type.ClassEnvironment;
 import matcher.model.type.ClassInstance;
 import matcher.model.type.FieldInstance;
@@ -264,11 +265,17 @@ public class ClassClassifier {
 			Set<ClassInstance> refsA = getOutRefs(clsA);
 			Set<ClassInstance> refsB = getOutRefs(clsB);
 
-			return ClassifierUtil.compareClassSets(refsA, refsB, false);
+			return ClassifierUtil.compareClassSets(refsA, refsB, true);
 		}
 	};
 
 	private static Set<ClassInstance> getOutRefs(ClassInstance cls) {
+		return cls.getEnv().getGlobal().getCache().compute(outRefsToken, cls, ClassClassifier::computeOutRefs);
+	}
+
+	private static final CacheToken<Set<ClassInstance>> outRefsToken = new CacheToken<>();
+
+	private static Set<ClassInstance> computeOutRefs(ClassInstance cls) {
 		Set<ClassInstance> ret = Util.newIdentityHashSet();
 
 		for (MethodInstance method : cls.getMethods()) {
@@ -288,11 +295,17 @@ public class ClassClassifier {
 			Set<ClassInstance> refsA = getInRefs(clsA);
 			Set<ClassInstance> refsB = getInRefs(clsB);
 
-			return ClassifierUtil.compareClassSets(refsA, refsB, false);
+			return ClassifierUtil.compareClassSets(refsA, refsB, true);
 		}
 	};
 
 	private static Set<ClassInstance> getInRefs(ClassInstance cls) {
+		return cls.getEnv().getGlobal().getCache().compute(inRefsToken, cls, ClassClassifier::computeInRefs);
+	}
+
+	private static final CacheToken<Set<ClassInstance>> inRefsToken = new CacheToken<>();
+
+	private static Set<ClassInstance> computeInRefs(ClassInstance cls) {
 		Set<ClassInstance> ret = Util.newIdentityHashSet();
 
 		for (MethodInstance method : cls.getMethodTypeRefs()) {
@@ -312,11 +325,17 @@ public class ClassClassifier {
 			Set<MethodInstance> refsA = getMethodOutRefs(clsA);
 			Set<MethodInstance> refsB = getMethodOutRefs(clsB);
 
-			return ClassifierUtil.compareMethodSets(refsA, refsB, false);
+			return ClassifierUtil.compareMethodSets(refsA, refsB, true);
 		}
 	};
 
 	private static Set<MethodInstance> getMethodOutRefs(ClassInstance cls) {
+		return cls.getEnv().getGlobal().getCache().compute(methodOutRefsToken, cls, ClassClassifier::computeMethodOutRefs);
+	}
+
+	private static final CacheToken<Set<MethodInstance>> methodOutRefsToken = new CacheToken<>();
+
+	private static Set<MethodInstance> computeMethodOutRefs(ClassInstance cls) {
 		Set<MethodInstance> ret = Util.newIdentityHashSet();
 
 		for (MethodInstance method : cls.getMethods()) {
@@ -332,11 +351,17 @@ public class ClassClassifier {
 			Set<MethodInstance> refsA = getMethodInRefs(clsA);
 			Set<MethodInstance> refsB = getMethodInRefs(clsB);
 
-			return ClassifierUtil.compareMethodSets(refsA, refsB, false);
+			return ClassifierUtil.compareMethodSets(refsA, refsB, true);
 		}
 	};
 
 	private static Set<MethodInstance> getMethodInRefs(ClassInstance cls) {
+		return cls.getEnv().getGlobal().getCache().compute(methodInRefsToken, cls, ClassClassifier::computeMethodInRefs);
+	}
+
+	private static final CacheToken<Set<MethodInstance>> methodInRefsToken = new CacheToken<>();
+
+	private static Set<MethodInstance> computeMethodInRefs(ClassInstance cls) {
 		Set<MethodInstance> ret = Util.newIdentityHashSet();
 
 		for (MethodInstance method : cls.getMethods()) {
@@ -352,11 +377,17 @@ public class ClassClassifier {
 			Set<FieldInstance> refsA = getFieldReadRefs(clsA);
 			Set<FieldInstance> refsB = getFieldReadRefs(clsB);
 
-			return ClassifierUtil.compareFieldSets(refsA, refsB, false);
+			return ClassifierUtil.compareFieldSets(refsA, refsB, true);
 		}
 	};
 
 	private static Set<FieldInstance> getFieldReadRefs(ClassInstance cls) {
+		return cls.getEnv().getGlobal().getCache().compute(fieldReadRefsToken, cls, ClassClassifier::computeFieldReadRefs);
+	}
+
+	private static final CacheToken<Set<FieldInstance>> fieldReadRefsToken = new CacheToken<>();
+
+	private static Set<FieldInstance> computeFieldReadRefs(ClassInstance cls) {
 		Set<FieldInstance> ret = Util.newIdentityHashSet();
 
 		for (MethodInstance method : cls.getMethods()) {
@@ -372,11 +403,17 @@ public class ClassClassifier {
 			Set<FieldInstance> refsA = getFieldWriteRefs(clsA);
 			Set<FieldInstance> refsB = getFieldWriteRefs(clsB);
 
-			return ClassifierUtil.compareFieldSets(refsA, refsB, false);
+			return ClassifierUtil.compareFieldSets(refsA, refsB, true);
 		}
 	};
 
 	private static Set<FieldInstance> getFieldWriteRefs(ClassInstance cls) {
+		return cls.getEnv().getGlobal().getCache().compute(fieldWriteRefsToken, cls, ClassClassifier::computeFieldWriteRefs);
+	}
+
+	private static final CacheToken<Set<FieldInstance>> fieldWriteRefsToken = new CacheToken<>();
+
+	private static Set<FieldInstance> computeFieldWriteRefs(ClassInstance cls) {
 		Set<FieldInstance> ret = Util.newIdentityHashSet();
 
 		for (MethodInstance method : cls.getMethods()) {
@@ -396,24 +433,33 @@ public class ClassClassifier {
 	private static AbstractClassifier numericConstants = new AbstractClassifier("numeric constants") {
 		@Override
 		public double getScore(ClassInstance clsA, ClassInstance clsB, ClassEnvironment env) {
-			Set<Integer> intsA = new HashSet<>();
-			Set<Integer> intsB = new HashSet<>();
-			Set<Long> longsA = new HashSet<>();
-			Set<Long> longsB = new HashSet<>();
-			Set<Float> floatsA = new HashSet<>();
-			Set<Float> floatsB = new HashSet<>();
-			Set<Double> doublesA = new HashSet<>();
-			Set<Double> doublesB = new HashSet<>();
+			Numbers numbersA = getNumbers(clsA);
+			Numbers numbersB = getNumbers(clsB);
 
-			extractNumbers(clsA, intsA, longsA, floatsA, doublesA);
-			extractNumbers(clsB, intsB, longsB, floatsB, doublesB);
-
-			return (ClassifierUtil.compareSets(intsA, intsB, false)
-					+ ClassifierUtil.compareSets(longsA, longsB, false)
-					+ ClassifierUtil.compareSets(floatsA, floatsB, false)
-					+ ClassifierUtil.compareSets(doublesA, doublesB, false)) / 4;
+			return (ClassifierUtil.compareSets(numbersA.ints, numbersB.ints, true)
+					+ ClassifierUtil.compareSets(numbersA.longs, numbersB.longs, true)
+					+ ClassifierUtil.compareSets(numbersA.floats, numbersB.floats, true)
+					+ ClassifierUtil.compareSets(numbersA.doubles, numbersB.doubles, true)) / 4;
 		}
 	};
+
+	private static Numbers getNumbers(ClassInstance cls) {
+		return cls.getEnv().getGlobal().getCache().compute(numbersToken, cls, cl -> {
+			Numbers ret = new Numbers();
+			extractNumbers(cl, ret.ints, ret.longs, ret.floats, ret.doubles);
+
+			return ret;
+		});
+	}
+
+	private static final CacheToken<Numbers> numbersToken = new CacheToken<>();
+
+	private static final class Numbers {
+		final Set<Integer> ints = new HashSet<>();
+		final Set<Long> longs = new HashSet<>();
+		final Set<Float> floats = new HashSet<>();
+		final Set<Double> doubles = new HashSet<>();
+	}
 
 	private static AbstractClassifier membersFull = new AbstractClassifier("members full") {
 		@Override

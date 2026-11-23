@@ -3,6 +3,7 @@ package matcher.model.classifier;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import matcher.model.type.Matchable;
 
@@ -17,8 +18,14 @@ public class MatchingCache {
 		return (T) cache.computeIfAbsent(new CacheKey<U>(token, a, b), k -> f.apply((U) k.a, (U) k.b));
 	}
 
+	@SuppressWarnings("unchecked")
+	public <T, U extends Matchable<U>> T compute(CacheToken<T> token, U a, Function<U, T> f) {
+		return (T) cache.computeIfAbsent(new CacheKey<U>(token, a, null), k -> f.apply((U) k.a));
+	}
+
 	public void clear() {
-		cache.clear();
+		// replacing the map is constant time, clearing it walks its whole (never shrinking) table
+		cache = new ConcurrentHashMap<>();
 	}
 
 	public static final class CacheToken<t> { }
@@ -32,7 +39,7 @@ public class MatchingCache {
 
 		@Override
 		public int hashCode() {
-			return token.hashCode() ^ a.hashCode() ^ b.hashCode();
+			return token.hashCode() ^ a.hashCode() ^ (b != null ? b.hashCode() : 0);
 		}
 
 		@Override
@@ -49,5 +56,5 @@ public class MatchingCache {
 		final T b;
 	}
 
-	private final Map<CacheKey<?>, Object> cache = new ConcurrentHashMap<>();
+	private volatile Map<CacheKey<?>, Object> cache = new ConcurrentHashMap<>();
 }

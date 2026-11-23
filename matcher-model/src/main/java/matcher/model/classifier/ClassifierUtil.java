@@ -174,13 +174,19 @@ public class ClassifierUtil {
 	}
 
 	public static <T> double compareSets(Set<T> setA, Set<T> setB, boolean readOnly) {
-		if (readOnly) setB = Util.copySet(setB);
+		int matched = 0;
 
-		int oldSize = setB.size();
-		setB.removeAll(setA);
+		if (setA.size() < setB.size()) {
+			for (T a : setA) {
+				if (setB.contains(a)) matched++;
+			}
+		} else {
+			for (T b : setB) {
+				if (setA.contains(b)) matched++;
+			}
+		}
 
-		int matched = oldSize - setB.size();
-		int total = setA.size() - matched + oldSize;
+		int total = setA.size() - matched + setB.size();
 
 		return total == 0 ? 1 : (double) matched / total;
 	}
@@ -202,52 +208,48 @@ public class ClassifierUtil {
 			return setA.isEmpty() && setB.isEmpty() ? 1 : 0;
 		}
 
-		if (readOnly) {
-			setA = Util.newIdentityHashSet(setA);
-			setB = Util.newIdentityHashSet(setB);
-		}
-
+		// works on lists of the remaining elements instead of mutating (copies of) the input sets
 		final int total = setA.size() + setB.size();
 		final boolean assumeBothOrNoneObfuscated = setA.iterator().next().getEnv().getGlobal().assumeBothOrNoneObfuscated;
 		int unmatched = 0;
+		List<T> remainingA = new ArrayList<>(setA.size());
+		Set<T> removedB = Util.newIdentityHashSet(0);
 
 		// precise matches, nameObfuscated a
-		for (Iterator<T> it = setA.iterator(); it.hasNext(); ) {
-			T a = it.next();
-
-			if (setB.remove(a)) {
-				it.remove();
+		for (T a : setA) {
+			if (setB.contains(a) && removedB.add(a)) {
+				// matched
 			} else if (a.getMatch() != null) {
-				if (!setB.remove(a.getMatch())) {
+				if (!setB.contains(a.getMatch()) || !removedB.add(a.getMatch())) {
 					unmatched++;
 				}
-
-				it.remove();
 			} else if (assumeBothOrNoneObfuscated && !a.isNameObfuscated()) {
 				unmatched++;
-				it.remove();
+			} else {
+				remainingA.add(a);
 			}
 		}
 
-		// nameObfuscated b
-		if (assumeBothOrNoneObfuscated) {
-			for (Iterator<T> it = setB.iterator(); it.hasNext(); ) {
-				T b = it.next();
+		List<T> remainingB = new ArrayList<>(setB.size() - removedB.size());
 
-				if (!b.isNameObfuscated()) {
-					unmatched++;
-					it.remove();
-				}
+		for (T b : setB) {
+			if (removedB.contains(b)) continue;
+
+			// nameObfuscated b
+			if (assumeBothOrNoneObfuscated && !b.isNameObfuscated()) {
+				unmatched++;
+			} else {
+				remainingB.add(b);
 			}
 		}
 
-		for (Iterator<T> it = setA.iterator(); it.hasNext(); ) {
+		for (Iterator<T> it = remainingA.iterator(); it.hasNext(); ) {
 			T a = it.next();
 
 			assert a.getMatch() == null && (!assumeBothOrNoneObfuscated || a.isNameObfuscated());
 			boolean found = false;
 
-			for (T b : setB) {
+			for (T b : remainingB) {
 				if (comparator.test(a, b)) {
 					found = true;
 					break;
@@ -260,10 +262,10 @@ public class ClassifierUtil {
 			}
 		}
 
-		for (T b : setB) {
+		for (T b : remainingB) {
 			boolean found = false;
 
-			for (T a : setA) {
+			for (T a : remainingA) {
 				if (comparator.test(a, b)) {
 					found = true;
 					break;
